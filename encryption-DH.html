@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Diffie-Hellman Encrypted Chat Tool</title>
+<style>
+body { font-family: Arial, sans-serif; padding: 20px; background:#f5f5f5; }
+textarea { width: 100%; font-family: monospace; }
+label { font-weight: bold; margin-top: 10px; display:block; }
+button { margin-top: 10px; padding: 6px 12px; }
+.container { max-width: 800px; margin:auto; background:#fff; padding:20px; border-radius:8px; box-shadow: 0 0 10px rgba(0,0,0,0.1);}
+hr { margin: 20px 0; }
+.info { font-size: 0.9em; color: #555; }
+.lang-select { float: right; margin-top: -40px; }
+</style>
+</head>
+<body>
+<div class="container">
+<h2 id="title">Diffie-Hellman Encrypted Chat Tool</h2>
+<select id="lang" class="lang-select" onchange="setLanguage()">
+    <option value="en" selected>English</option>
+    <option value="zh">中文</option>
+</select>
+
+<button id="gen_btn" onclick="generateDH()">Generate My DH Keys</button>
+
+<label for="my_pubkey" id="my_pubkey_label">My Public Key (send to others)</label>
+<textarea id="my_pubkey" rows="6" readonly></textarea>
+
+<label for="my_privkey" id="my_privkey_label">My Private Key (keep safe)</label>
+<textarea id="my_privkey" rows="4" readonly></textarea>
+
+<hr>
+
+<label for="friend_pubkey" id="friend_pubkey_label">Friend's Public Key</label>
+<textarea id="friend_pubkey" rows="6"></textarea>
+
+<label for="message" id="message_label">Message to Encrypt</label>
+<textarea id="message" rows="4"></textarea>
+<div class="info" id="plaintext_info">Plaintext length: <span id="plaintext_len">0</span> bytes</div>
+<button id="encrypt_btn" onclick="encryptMessage()">Encrypt Message</button>
+
+<label for="ciphertext" id="ciphertext_label">Ciphertext</label>
+<textarea id="ciphertext" rows="6" readonly></textarea>
+<div class="info" id="ciphertext_info">Ciphertext length: <span id="ciphertext_len">0</span> bytes</div>
+
+<hr>
+
+<label for="ciphertext_in" id="ciphertext_in_label">Paste Friend's Ciphertext</label>
+<textarea id="ciphertext_in" rows="6"></textarea>
+<button id="decrypt_btn" onclick="decryptMessage()">Decrypt Message</button>
+
+<label for="decrypted" id="decrypted_label">Decrypted Message</label>
+<textarea id="decrypted" rows="4" readonly></textarea>
+<div class="info" id="decrypted_info">Plaintext length: <span id="decrypted_len">0</span> bytes</div>
+</div>
+
+<script>
+// DH parameters (2048-bit MODP Group)
+const p = BigInt("0xFFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E08"
++ "8A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7EDEE386BFB5A899FA5AE9F24117C4B1FE649286651ECE65381FFFFFFFFFFFFFFFF");
+const g = BigInt(2);
+let dhKeys = {};
+
+// Language texts
+const texts = {
+    en: {
+        title: "Diffie-Hellman Encrypted Chat Tool",
+        gen_btn: "Generate My DH Keys",
+        my_pubkey_label: "My Public Key (send to others)",
+        my_privkey_label: "My Private Key (keep safe)",
+        friend_pubkey_label: "Friend's Public Key",
+        message_label: "Message to Encrypt",
+        plaintext_info: "Plaintext length",
+        encrypt_btn: "Encrypt Message",
+        ciphertext_label: "Ciphertext",
+        ciphertext_info: "Ciphertext length",
+        ciphertext_in_label: "Paste Friend's Ciphertext",
+        decrypt_btn: "Decrypt Message",
+        decrypted_label: "Decrypted Message",
+        decrypted_info: "Plaintext length",
+        keygen_done: "DH keys generated!",
+        encrypted: "Encrypted!",
+        decrypted: "Decrypted!",
+        fill_fields: "Please fill in required fields",
+        cipher_format_error: "Ciphertext format error",
+        decrypt_fail: "Decryption failed"
+    },
+    zh: {
+        title: "Diffie-Hellman 加密聊天工具",
+        gen_btn: "生成我的 DH 密钥",
+        my_pubkey_label: "我的公钥（发送给别人）",
+        my_privkey_label: "我的私钥（保管好）",
+        friend_pubkey_label: "对方公钥",
+        message_label: "要加密的消息",
+        plaintext_info: "明文长度",
+        encrypt_btn: "加密消息",
+        ciphertext_label: "密文",
+        ciphertext_info: "密文长度",
+        ciphertext_in_label: "粘入对方密文",
+        decrypt_btn: "解密消息",
+        decrypted_label: "解密结果",
+        decrypted_info: "明文长度",
+        keygen_done: "DH 密钥生成完成！",
+        encrypted: "加密完成！",
+        decrypted: "解密成功！",
+        fill_fields: "请填写必要字段",
+        cipher_format_error: "密文格式错误",
+        decrypt_fail: "解密失败"
+    }
+};
+let currentLang = 'en';
+
+// Language switching
+function setLanguage() {
+    currentLang = document.getElementById('lang').value;
+    const t = texts[currentLang];
+    document.getElementById('title').innerText = t.title;
+    document.getElementById('gen_btn').innerText = t.gen_btn;
+    document.getElementById('my_pubkey_label').innerText = t.my_pubkey_label;
+    document.getElementById('my_privkey_label').innerText = t.my_privkey_label;
+    document.getElementById('friend_pubkey_label').innerText = t.friend_pubkey_label;
+    document.getElementById('message_label').innerText = t.message_label;
+    document.getElementById('plaintext_info').innerText = t.plaintext_info + ": ";
+    document.getElementById('encrypt_btn').innerText = t.encrypt_btn;
+    document.getElementById('ciphertext_label').innerText = t.ciphertext_label;
+    document.getElementById('ciphertext_info').innerText = t.ciphertext_info + ": ";
+    document.getElementById('ciphertext_in_label').innerText = t.ciphertext_in_label;
+    document.getElementById('decrypt_btn').innerText = t.decrypt_btn;
+    document.getElementById('decrypted_label').innerText = t.decrypted_label;
+    document.getElementById('decrypted_info').innerText = t.decrypted_info + ": ";
+}
+
+// BigInt modPow
+function modPow(base, exp, mod) {
+    let result = 1n;
+    base = base % mod;
+    while(exp > 0) {
+        if(exp % 2n === 1n) result = (result * base) % mod;
+        exp = exp / 2n;
+        base = (base * base) % mod;
+    }
+    return result;
+}
+
+// BigInt <-> ArrayBuffer
+function BigIntToArrayBuffer(bi) {
+    let hex = bi.toString(16);
+    if(hex.length % 2) hex = '0'+hex;
+    const len = hex.length/2;
+    const buf = new Uint8Array(len);
+    for(let i=0;i<len;i++) buf[i] = parseInt(hex.substr(i*2,2),16);
+    return buf.buffer;
+}
+
+// ArrayBuffer <-> Base64
+function arrayBufferToBase64(buf) {
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    for(let b of bytes) binary += String.fromCharCode(b);
+    return btoa(binary);
+}
+function base64ToArrayBuffer(b64) {
+    const binary = atob(b64);
+    const buf = new Uint8Array(binary.length);
+    for(let i=0;i<binary.length;i++) buf[i]=binary.charCodeAt(i);
+    return buf.buffer;
+}
+
+// Generate DH Keys
+function generateDH() {
+    dhKeys.priv = BigInt('0x'+crypto.getRandomValues(new Uint8Array(32)).reduce((str,v)=>str+v.toString(16).padStart(2,'0'),''));
+    dhKeys.pub = modPow(g, dhKeys.priv, p);
+    document.getElementById('my_privkey').value = dhKeys.priv.toString(16);
+    document.getElementById('my_pubkey').value = dhKeys.pub.toString(16);
+    alert(texts[currentLang].keygen_done);
+}
+
+// Derive AES key
+async function deriveAESKey(sharedSecret) {
+    const hash = await crypto.subtle.digest('SHA-256', BigIntToArrayBuffer(sharedSecret));
+    return await crypto.subtle.importKey('raw', hash, 'AES-GCM', false, ['encrypt','decrypt']);
+}
+
+// Update lengths
+function updateLengths() {
+    document.getElementById('plaintext_info').innerText = new TextEncoder().encode(document.getElementById('message').value).length;
+    document.getElementById('ciphertext_info').innerText = document.getElementById('ciphertext').value.length;
+    document.getElementById('decrypted_info').innerText = new TextEncoder().encode(document.getElementById('decrypted').value).length;
+}
+
+// Encrypt
+async function encryptMessage() {
+    const friendPubVal = document.getElementById('friend_pubkey').value.trim();
+    const msg = document.getElementById('message').value;
+    if(!friendPubVal || !msg){ alert(texts[currentLang].fill_fields); return; }
+
+    const friendPub = BigInt('0x'+friendPubVal);
+    const shared = modPow(friendPub, dhKeys.priv, p);
+    const aesKey = await deriveAESKey(shared);
+
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const enc = await crypto.subtle.encrypt({name:'AES-GCM', iv}, aesKey, new TextEncoder().encode(msg));
+
+    const ciphertext = new Uint8Array(enc);
+    const tag = ciphertext.slice(-16);
+    const ct = ciphertext.slice(0,-16);
+
+    document.getElementById('ciphertext').value = [arrayBufferToBase64(iv), arrayBufferToBase64(tag), arrayBufferToBase64(ct)].join("::");
+    updateLengths();
+    alert(texts[currentLang].encrypted);
+}
+
+// Decrypt
+async function decryptMessage() {
+    const friendPubVal = document.getElementById('friend_pubkey').value.trim();
+    const b64_blob = document.getElementById('ciphertext_in').value.trim();
+    if(!friendPubVal || !b64_blob){ alert(texts[currentLang].fill_fields); return; }
+
+    const parts = b64_blob.split("::");
+    if(parts.length !==3){ alert(texts[currentLang].cipher_format_error); return; }
+
+    const friendPub = BigInt('0x'+friendPubVal);
+    const shared = modPow(friendPub, dhKeys.priv, p);
+    const aesKey = await deriveAESKey(shared);
+
+    const iv = base64ToArrayBuffer(parts[0]);
+    const tag = base64ToArrayBuffer(parts[1]);
+    const ct = base64ToArrayBuffer(parts[2]);
+
+    const combined = new Uint8Array(ct.byteLength + tag.byteLength);
+    combined.set(new Uint8Array(ct), 0);
+    combined.set(new Uint8Array(tag), ct.byteLength);
+
+    try {
+        const decrypted = await crypto.subtle.decrypt({name:'AES-GCM', iv:new Uint8Array(iv)}, aesKey, combined);
+        document.getElementById('decrypted').value = new TextDecoder().decode(decrypted);
+        updateLengths();
+        alert(texts[currentLang].decrypted);
+    } catch(e){ alert(texts[currentLang].decrypt_fail); console.error(e);}
+}
+
+document.getElementById('message').addEventListener('input', updateLengths);
+
+// Set default language
+setLanguage();
+</script>
+</body>
+</html>

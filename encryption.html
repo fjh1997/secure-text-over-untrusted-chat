@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>RSA 端到端加密聊天工具</title>
+<title>RSA End-to-End Encrypted Chat Tool</title>
 <style>
 body { font-family: Arial, sans-serif; padding: 20px; background:#f5f5f5; }
 textarea { width: 100%; font-family: monospace; }
@@ -11,55 +11,143 @@ button { margin-top: 10px; padding: 6px 12px; }
 .container { max-width: 800px; margin:auto; background:#fff; padding:20px; border-radius:8px; box-shadow: 0 0 10px rgba(0,0,0,0.1);}
 hr { margin: 20px 0; }
 .info { font-size: 0.9em; color: #555; }
+.lang-select { float: right; margin-top: -40px; }
 </style>
 </head>
 <body>
 <div class="container">
-<h2>RSA 端到端加密聊天工具</h2>
+<h2 id="title">RSA End-to-End Encrypted Chat Tool</h2>
+<select id="lang" class="lang-select" onchange="setLanguage()">
+    <option value="en" selected>English</option>
+    <option value="zh">中文</option>
+</select>
 
 <!-- 生成自己的密钥 -->
-<button onclick="generateRSA()">生成我的 RSA 密钥对</button>
+<button id="gen_btn" onclick="generateRSA()">Generate My RSA Key Pair</button>
 
-<label for="my_pubkey">我的公钥（发送给别人）</label>
+<label for="my_pubkey" id="my_pubkey_label">My Public Key (send to others)</label>
 <textarea id="my_pubkey" rows="6" readonly></textarea>
-<button onclick="copyToClipboard('my_pubkey')">复制我的公钥</button>
+<button onclick="copyToClipboard('my_pubkey')" id="copy_pub_btn">Copy My Public Key</button>
 
-<label for="my_privkey">我的私钥（保管好，用于解密别人消息）</label>
+<label for="my_privkey" id="my_privkey_label">My Private Key (keep safe, used to decrypt messages)</label>
 <textarea id="my_privkey" rows="6" readonly></textarea>
-<button onclick="copyToClipboard('my_privkey')">复制我的私钥</button>
+<button onclick="copyToClipboard('my_privkey')" id="copy_priv_btn">Copy My Private Key</button>
 
 <hr>
 
 <!-- 对方公钥加密消息 -->
-<label for="friend_pubkey">输入对方公钥（用于加密消息）</label>
+<label for="friend_pubkey" id="friend_pubkey_label">Enter Friend's Public Key (for encryption)</label>
 <textarea id="friend_pubkey" rows="6"></textarea>
 
-<label for="message">输入要加密发送的消息</label>
+<label for="message" id="message_label">Enter Message to Encrypt</label>
 <textarea id="message" rows="4"></textarea>
-<div class="info">明文长度：<span id="plaintext_len">0</span> 字节</div>
-<button onclick="encryptMessage()">使用对方公钥加密消息</button>
+<div class="info">Plaintext length: <span id="plaintext_len">0</span> bytes</div>
+<button onclick="encryptMessage()" id="encrypt_btn">Encrypt Message with Friend's Public Key</button>
 
-<label for="ciphertext">生成的密文</label>
+<label for="ciphertext" id="ciphertext_label">Generated Ciphertext</label>
 <textarea id="ciphertext" rows="6" readonly></textarea>
-<div class="info">密文长度：<span id="ciphertext_len">0</span> 字节</div>
-<button onclick="copyToClipboard('ciphertext')">复制密文</button>
+<div class="info">Ciphertext length: <span id="ciphertext_len">0</span> bytes</div>
+<button onclick="copyToClipboard('ciphertext')" id="copy_cipher_btn">Copy Ciphertext</button>
 
 <hr>
 
 <!-- 消息解密 -->
-<label for="ciphertext_in">粘入别人发来的密文</label>
+<label for="ciphertext_in" id="ciphertext_in_label">Paste Ciphertext Sent by Friend</label>
 <textarea id="ciphertext_in" rows="6"></textarea>
-<div class="info">检测密文格式完整性：<span id="ciphertext_check">未知</span></div>
-<button onclick="decryptMessage()">解密密文</button>
+<div class="info">Ciphertext format check: <span id="ciphertext_check">Unknown</span></div>
+<button onclick="decryptMessage()" id="decrypt_btn">Decrypt Ciphertext</button>
 
-<label for="decrypted">解密结果（明文）</label>
+<label for="decrypted" id="decrypted_label">Decrypted Message (Plaintext)</label>
 <textarea id="decrypted" rows="6" readonly></textarea>
-<div class="info">明文长度：<span id="decrypted_len">0</span> 字节</div>
-<button onclick="copyToClipboard('decrypted')">复制明文</button>
+<div class="info">Plaintext length: <span id="decrypted_len">0</span> bytes</div>
+<button onclick="copyToClipboard('decrypted')" id="copy_decrypted_btn">Copy Plaintext</button>
 </div>
 
 <script>
 let cryptoKeys = {}; // 保存自己的 CryptoKey 对象
+
+// 语言文本映射
+const texts = {
+    en: {
+        title: "RSA End-to-End Encrypted Chat Tool",
+        gen_btn: "Generate My RSA Key Pair",
+        my_pubkey_label: "My Public Key (send to others)",
+        copy_pub_btn: "Copy My Public Key",
+        my_privkey_label: "My Private Key (keep safe, used to decrypt messages)",
+        copy_priv_btn: "Copy My Private Key",
+        friend_pubkey_label: "Enter Friend's Public Key (for encryption)",
+        message_label: "Enter Message to Encrypt",
+        encrypt_btn: "Encrypt Message with Friend's Public Key",
+        ciphertext_label: "Generated Ciphertext",
+        copy_cipher_btn: "Copy Ciphertext",
+        ciphertext_in_label: "Paste Ciphertext Sent by Friend",
+        decrypt_btn: "Decrypt Ciphertext",
+        decrypted_label: "Decrypted Message (Plaintext)",
+        copy_decrypted_btn: "Copy Plaintext",
+        plaintext_len: "Plaintext length",
+        ciphertext_len: "Ciphertext length",
+        ciphertext_check_format: "Ciphertext format check",
+        copied: "Copied to clipboard",
+        keygen_done: "RSA key pair generated!",
+        encrypt_done: "Ciphertext generated!",
+        decrypt_done: "Decryption successful!",
+        fill_fields: "Please fill in required fields",
+        encrypt_fail: "Encryption failed",
+        decrypt_fail: "Decryption failed",
+        format_correct: "Format correct",
+        format_wrong: "Format wrong"
+    },
+    zh: {
+        title: "RSA 端到端加密聊天工具",
+        gen_btn: "生成我的 RSA 密钥对",
+        my_pubkey_label: "我的公钥（发送给别人）",
+        copy_pub_btn: "复制我的公钥",
+        my_privkey_label: "我的私钥（保管好，用于解密别人消息）",
+        copy_priv_btn: "复制我的私钥",
+        friend_pubkey_label: "输入对方公钥（用于加密消息）",
+        message_label: "输入要加密发送的消息",
+        encrypt_btn: "使用对方公钥加密消息",
+        ciphertext_label: "生成的密文",
+        copy_cipher_btn: "复制密文",
+        ciphertext_in_label: "粘入别人发来的密文",
+        decrypt_btn: "解密密文",
+        decrypted_label: "解密结果（明文）",
+        copy_decrypted_btn: "复制明文",
+        plaintext_len: "明文长度",
+        ciphertext_len: "密文长度",
+        ciphertext_check_format: "检测密文格式完整性",
+        copied: "已复制到剪贴板",
+        keygen_done: "RSA 密钥对生成完成！",
+        encrypt_done: "密文生成完成！",
+        decrypt_done: "解密成功！",
+        fill_fields: "请填写必要字段",
+        encrypt_fail: "加密失败",
+        decrypt_fail: "解密失败",
+        format_correct: "格式正确",
+        format_wrong: "格式错误"
+    }
+};
+
+let currentLang = 'en';
+function setLanguage() {
+    currentLang = document.getElementById('lang').value;
+    const t = texts[currentLang];
+    document.getElementById('title').innerText = t.title;
+    document.getElementById('gen_btn').innerText = t.gen_btn;
+    document.getElementById('my_pubkey_label').innerText = t.my_pubkey_label;
+    document.getElementById('copy_pub_btn').innerText = t.copy_pub_btn;
+    document.getElementById('my_privkey_label').innerText = t.my_privkey_label;
+    document.getElementById('copy_priv_btn').innerText = t.copy_priv_btn;
+    document.getElementById('friend_pubkey_label').innerText = t.friend_pubkey_label;
+    document.getElementById('message_label').innerText = t.message_label;
+    document.getElementById('encrypt_btn').innerText = t.encrypt_btn;
+    document.getElementById('ciphertext_label').innerText = t.ciphertext_label;
+    document.getElementById('copy_cipher_btn').innerText = t.copy_cipher_btn;
+    document.getElementById('ciphertext_in_label').innerText = t.ciphertext_in_label;
+    document.getElementById('decrypt_btn').innerText = t.decrypt_btn;
+    document.getElementById('decrypted_label').innerText = t.decrypted_label;
+    document.getElementById('copy_decrypted_btn').innerText = t.copy_decrypted_btn;
+}
 
 // ArrayBuffer <-> Base64
 function arrayBufferToBase64(buf) {
@@ -84,7 +172,7 @@ async function exportKey(key, type) {
         `-----BEGIN PUBLIC KEY-----\n${b64}\n-----END PUBLIC KEY-----`;
 }
 
-// 生成自己的 RSA 密钥对
+// 生成 RSA
 async function generateRSA() {
     try {
         const keyPair = await window.crypto.subtle.generateKey(
@@ -102,16 +190,16 @@ async function generateRSA() {
         document.getElementById('ciphertext_in').value = "";
         document.getElementById('decrypted').value = "";
         updateLengths();
-        alert("RSA 密钥对生成完成！");
-    } catch(e){ alert("生成失败: "+e); console.error(e); }
+        alert(texts[currentLang].keygen_done);
+    } catch(e){ alert(texts[currentLang].encrypt_fail+": "+e); console.error(e); }
 }
 
-// 复制到剪贴板
+// 复制
 function copyToClipboard(id) {
     const val = document.getElementById(id).value;
     if(!val) return;
     navigator.clipboard.writeText(val);
-    alert("已复制到剪贴板");
+    alert(texts[currentLang].copied);
 }
 
 // PEM -> CryptoKey
@@ -140,18 +228,18 @@ async function pemToPrivateKey(pem) {
     );
 }
 
-// 更新长度显示
+// 更新长度
 function updateLengths() {
     document.getElementById('plaintext_len').innerText = new TextEncoder().encode(document.getElementById('message').value).length;
     document.getElementById('ciphertext_len').innerText = document.getElementById('ciphertext').value.length;
     document.getElementById('decrypted_len').innerText = new TextEncoder().encode(document.getElementById('decrypted').value).length;
 }
 
-// 使用对方公钥加密消息
+// 加密
 async function encryptMessage() {
     const pubPem = document.getElementById('friend_pubkey').value.trim();
     const msg = document.getElementById('message').value;
-    if(!pubPem || !msg){ alert("请填写对方公钥并输入消息"); return; }
+    if(!pubPem || !msg){ alert(texts[currentLang].fill_fields); return; }
 
     try {
         const pubKey = await pemToCryptoKey(pubPem, "encrypt");
@@ -175,21 +263,21 @@ async function encryptMessage() {
 
         document.getElementById('ciphertext').value = parts.join("::");
         updateLengths();
-        alert("密文生成完成！");
-    } catch(e){ alert("加密失败: "+e); console.error(e); }
+        alert(texts[currentLang].encrypt_done);
+    } catch(e){ alert(texts[currentLang].encrypt_fail+": "+e); console.error(e); }
 }
 
-// 使用自己私钥解密别人发来的消息
+// 解密
 async function decryptMessage() {
     const privPem = document.getElementById('my_privkey').value.trim();
     const b64_blob = document.getElementById('ciphertext_in').value.trim();
-    if(!privPem || !b64_blob){ alert("请填写私钥并粘入密文"); return; }
+    if(!privPem || !b64_blob){ alert(texts[currentLang].fill_fields); return; }
 
     const parts = b64_blob.split("::");
-    document.getElementById('ciphertext_check').innerText = parts.length===4 ? "格式正确" : "格式错误";
+    document.getElementById('ciphertext_check').innerText = parts.length===4 ? texts[currentLang].format_correct : texts[currentLang].format_wrong;
 
     try {
-        if(parts.length!==4) throw new Error("密文格式错误");
+        if(parts.length!==4) throw new Error("Ciphertext format error");
         const encKey = base64ToArrayBuffer(parts[0]);
         const iv = base64ToArrayBuffer(parts[1]);
         const tag = base64ToArrayBuffer(parts[2]);
@@ -207,11 +295,14 @@ async function decryptMessage() {
 
         document.getElementById('decrypted').value = new TextDecoder().decode(decrypted);
         updateLengths();
-        alert("解密成功！");
-    } catch(e){ alert("解密失败: "+e); console.error(e); }
+        alert(texts[currentLang].decrypt_done);
+    } catch(e){ alert(texts[currentLang].decrypt_fail+": "+e); console.error(e); }
 }
 
 document.getElementById('message').addEventListener('input', updateLengths);
+
+// 初始语言设置
+setLanguage();
 </script>
 </body>
 </html>

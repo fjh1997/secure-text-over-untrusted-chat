@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>RSA 端到端加密聊天工具</title>
+<style>
+body { font-family: Arial, sans-serif; padding: 20px; background:#f5f5f5; }
+textarea { width: 100%; font-family: monospace; }
+label { font-weight: bold; margin-top: 10px; display:block; }
+button { margin-top: 10px; padding: 6px 12px; }
+.container { max-width: 800px; margin:auto; background:#fff; padding:20px; border-radius:8px; box-shadow: 0 0 10px rgba(0,0,0,0.1);}
+hr { margin: 20px 0; }
+.info { font-size: 0.9em; color: #555; }
+</style>
+</head>
+<body>
+<div class="container">
+<h2>RSA 端到端加密聊天工具</h2>
+
+<!-- 生成自己的密钥 -->
+<button onclick="generateRSA()">生成我的 RSA 密钥对</button>
+
+<label for="my_pubkey">我的公钥（发送给别人）</label>
+<textarea id="my_pubkey" rows="6" readonly></textarea>
+<button onclick="copyToClipboard('my_pubkey')">复制我的公钥</button>
+
+<label for="my_privkey">我的私钥（保管好，用于解密别人消息）</label>
+<textarea id="my_privkey" rows="6" readonly></textarea>
+<button onclick="copyToClipboard('my_privkey')">复制我的私钥</button>
+
+<hr>
+
+<!-- 对方公钥加密消息 -->
+<label for="friend_pubkey">输入对方公钥（用于加密消息）</label>
+<textarea id="friend_pubkey" rows="6"></textarea>
+
+<label for="message">输入要加密发送的消息</label>
+<textarea id="message" rows="4"></textarea>
+<div class="info">明文长度：<span id="plaintext_len">0</span> 字节</div>
+<button onclick="encryptMessage()">使用对方公钥加密消息</button>
+
+<label for="ciphertext">生成的密文</label>
+<textarea id="ciphertext" rows="6" readonly></textarea>
+<div class="info">密文长度：<span id="ciphertext_len">0</span> 字节</div>
+<button onclick="copyToClipboard('ciphertext')">复制密文</button>
+
+<hr>
+
+<!-- 消息解密 -->
+<label for="ciphertext_in">粘入别人发来的密文</label>
+<textarea id="ciphertext_in" rows="6"></textarea>
+<div class="info">检测密文格式完整性：<span id="ciphertext_check">未知</span></div>
+<button onclick="decryptMessage()">解密密文</button>
+
+<label for="decrypted">解密结果（明文）</label>
+<textarea id="decrypted" rows="6" readonly></textarea>
+<div class="info">明文长度：<span id="decrypted_len">0</span> 字节</div>
+<button onclick="copyToClipboard('decrypted')">复制明文</button>
+</div>
+
+<script>
+let cryptoKeys = {}; // 保存自己的 CryptoKey 对象
+
+// ArrayBuffer <-> Base64
+function arrayBufferToBase64(buf) {
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    for(let b of bytes) binary += String.fromCharCode(b);
+    return btoa(binary);
+}
+function base64ToArrayBuffer(b64) {
+    const binary = atob(b64);
+    const buf = new Uint8Array(binary.length);
+    for(let i=0;i<binary.length;i++) buf[i]=binary.charCodeAt(i);
+    return buf.buffer;
+}
+
+// 导出为 PEM
+async function exportKey(key, type) {
+    const exported = await window.crypto.subtle.exportKey(type, key);
+    const b64 = arrayBufferToBase64(exported);
+    return type==='pkcs8' ?
+        `-----BEGIN PRIVATE KEY-----\n${b64}\n-----END PRIVATE KEY-----` :
+        `-----BEGIN PUBLIC KEY-----\n${b64}\n-----END PUBLIC KEY-----`;
+}
+
+// 生成自己的 RSA 密钥对
+async function generateRSA() {
+    try {
+        const keyPair = await window.crypto.subtle.generateKey(
+            { name: "RSA-OAEP", modulusLength: 2048, publicExponent: new Uint8Array([0x01,0x00,0x01]), hash: "SHA-256" },
+            true,
+            ["encrypt","decrypt"]
+        );
+        cryptoKeys.publicKey = keyPair.publicKey;
+        cryptoKeys.privateKey = keyPair.privateKey;
+
+        document.getElementById('my_pubkey').value = await exportKey(keyPair.publicKey, "spki");
+        document.getElementById('my_privkey').value = await exportKey(keyPair.privateKey, "pkcs8");
+        document.getElementById('ciphertext').value = "";
+        document.getElementById('message').value = "";
+        document.getElementById('ciphertext_in').value = "";
+        document.getElementById('decrypted').value = "";
+        updateLengths();
+        alert("RSA 密钥对生成完成！");
+    } catch(e){ alert("生成失败: "+e); console.error(e); }
+}
+
+// 复制到剪贴板
+function copyToClipboard(id) {
+    const val = document.getElementById(id).value;
+    if(!val) return;
+    navigator.clipboard.writeText(val);
+    alert("已复制到剪贴板");
+}
+
+// PEM -> CryptoKey
+async function pemToCryptoKey(pem, usage="encrypt") {
+    const b64 = pem.replace(/-----.*?-----/g,'').replace(/\s+/g,'');
+    const buf = base64ToArrayBuffer(b64);
+    return await window.crypto.subtle.importKey(
+        "spki",
+        buf,
+        { name: "RSA-OAEP", hash: "SHA-256" },
+        true,
+        [usage]
+    );
+}
+
+// PEM 私钥 -> CryptoKey
+async function pemToPrivateKey(pem) {
+    const b64 = pem.replace(/-----.*?-----/g,'').replace(/\s+/g,'');
+    const buf = base64ToArrayBuffer(b64);
+    return await window.crypto.subtle.importKey(
+        "pkcs8",
+        buf,
+        { name:"RSA-OAEP", hash:"SHA-256" },
+        true,
+        ["decrypt"]
+    );
+}
+
+// 更新长度显示
+function updateLengths() {
+    document.getElementById('plaintext_len').innerText = new TextEncoder().encode(document.getElementById('message').value).length;
+    document.getElementById('ciphertext_len').innerText = document.getElementById('ciphertext').value.length;
+    document.getElementById('decrypted_len').innerText = new TextEncoder().encode(document.getElementById('decrypted').value).length;
+}
+
+// 使用对方公钥加密消息
+async function encryptMessage() {
+    const pubPem = document.getElementById('friend_pubkey').value.trim();
+    const msg = document.getElementById('message').value;
+    if(!pubPem || !msg){ alert("请填写对方公钥并输入消息"); return; }
+
+    try {
+        const pubKey = await pemToCryptoKey(pubPem, "encrypt");
+        const aesKey = await window.crypto.subtle.generateKey({name:"AES-GCM", length:256}, true, ["encrypt","decrypt"]);
+        const iv = window.crypto.getRandomValues(new Uint8Array(12));
+        const encMsg = await window.crypto.subtle.encrypt({name:"AES-GCM", iv:iv}, aesKey, new TextEncoder().encode(msg));
+
+        const rawAesKey = await window.crypto.subtle.exportKey("raw", aesKey);
+        const encKey = await window.crypto.subtle.encrypt({name:"RSA-OAEP"}, pubKey, rawAesKey);
+
+        const ciphertextBuf = new Uint8Array(encMsg);
+        const tag = ciphertextBuf.slice(-16);
+        const ciphertext = ciphertextBuf.slice(0,-16);
+
+        const parts = [
+            arrayBufferToBase64(encKey),
+            arrayBufferToBase64(iv),
+            arrayBufferToBase64(tag),
+            arrayBufferToBase64(ciphertext)
+        ];
+
+        document.getElementById('ciphertext').value = parts.join("::");
+        updateLengths();
+        alert("密文生成完成！");
+    } catch(e){ alert("加密失败: "+e); console.error(e); }
+}
+
+// 使用自己私钥解密别人发来的消息
+async function decryptMessage() {
+    const privPem = document.getElementById('my_privkey').value.trim();
+    const b64_blob = document.getElementById('ciphertext_in').value.trim();
+    if(!privPem || !b64_blob){ alert("请填写私钥并粘入密文"); return; }
+
+    const parts = b64_blob.split("::");
+    document.getElementById('ciphertext_check').innerText = parts.length===4 ? "格式正确" : "格式错误";
+
+    try {
+        if(parts.length!==4) throw new Error("密文格式错误");
+        const encKey = base64ToArrayBuffer(parts[0]);
+        const iv = base64ToArrayBuffer(parts[1]);
+        const tag = base64ToArrayBuffer(parts[2]);
+        const ciphertext = base64ToArrayBuffer(parts[3]);
+
+        const privKey = await pemToPrivateKey(privPem);
+        const aesKeyRaw = await window.crypto.subtle.decrypt({name:"RSA-OAEP"}, privKey, encKey);
+        const aesKey = await window.crypto.subtle.importKey("raw", aesKeyRaw, {name:"AES-GCM"}, false, ["decrypt"]);
+
+        const combined = new Uint8Array(ciphertext.byteLength + tag.byteLength);
+        combined.set(new Uint8Array(ciphertext), 0);
+        combined.set(new Uint8Array(tag), ciphertext.byteLength);
+
+        const decrypted = await window.crypto.subtle.decrypt({name:"AES-GCM", iv:new Uint8Array(iv)}, aesKey, combined);
+
+        document.getElementById('decrypted').value = new TextDecoder().decode(decrypted);
+        updateLengths();
+        alert("解密成功！");
+    } catch(e){ alert("解密失败: "+e); console.error(e); }
+}
+
+document.getElementById('message').addEventListener('input', updateLengths);
+</script>
+</body>
+</html>
